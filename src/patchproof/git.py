@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import tempfile
+import time
 from pathlib import Path
+
+from patchproof.limits import MAX_DIFF_BYTES, MAX_GIT_STDERR_BYTES, diff_limit_message
 
 
 class GitError(RuntimeError):
@@ -33,26 +38,51 @@ DIFF_ARGS = [
 ]
 
 
+def _stop(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is None:
+        process.kill()
+    process.wait()
+
+
 def _run_git(args: list[str], cwd: Path) -> str:
     try:
-        process = subprocess.run(
-            ["git", *args],
-            cwd=cwd,
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-        )
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            process = subprocess.Popen(
+                ["git", *args],
+                cwd=cwd,
+                stdout=stdout,
+                stderr=stderr,
+            )
+            deadline = time.monotonic() + 60
+            while process.poll() is None:
+                if os.fstat(stdout.fileno()).st_size > MAX_DIFF_BYTES:
+                    _stop(process)
+                    raise GitError(diff_limit_message())
+                if os.fstat(stderr.fileno()).st_size > MAX_GIT_STDERR_BYTES:
+                    _stop(process)
+                    raise GitError("Git diagnostics exceed the 1 MiB safety limit")
+                if time.monotonic() >= deadline:
+                    _stop(process)
+                    raise GitError("Git diff timed out after 60 seconds")
+                time.sleep(0.02)
+
+            stdout_size = os.fstat(stdout.fileno()).st_size
+            stderr_size = os.fstat(stderr.fileno()).st_size
+            if stdout_size > MAX_DIFF_BYTES:
+                raise GitError(diff_limit_message())
+            if stderr_size > MAX_GIT_STDERR_BYTES:
+                raise GitError("Git diagnostics exceed the 1 MiB safety limit")
+
+            stderr.seek(0)
+            diagnostics = stderr.read(MAX_GIT_STDERR_BYTES).decode("utf-8", errors="replace")
+            if process.returncode != 0:
+                message = diagnostics.strip() or "Git exited with an unknown error"
+                raise GitError(message)
+
+            stdout.seek(0)
+            return stdout.read(MAX_DIFF_BYTES).decode("utf-8", errors="replace")
     except FileNotFoundError as exc:
         raise GitError("Git is not installed or not available on PATH") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise GitError("Git diff timed out after 60 seconds") from exc
-    if process.returncode != 0:
-        message = process.stderr.strip() or "Git exited with an unknown error"
-        raise GitError(message)
-    return process.stdout
 
 
 def diff_between(base: str, head: str, cwd: Path) -> str:

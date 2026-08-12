@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from patchproof.models import ChangeSet, Severity
+from patchproof.models import ChangedFile, ChangeSet, Severity
 
 
 @dataclass(slots=True)
@@ -78,10 +78,15 @@ def path_matches(path: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatchcase(normalized, pattern) for pattern in patterns)
 
 
+def _is_fully_excluded(file: ChangedFile, patterns: list[str]) -> bool:
+    """Exclude a rename only when every real old/new path is excluded."""
+    return bool(file.paths) and all(path_matches(path, patterns) for path in file.paths)
+
+
 def filter_excluded(changes: ChangeSet, config: Config) -> ChangeSet:
     """Return a change set with configured excluded paths removed."""
     return ChangeSet(
-        files=[file for file in changes.files if not path_matches(file.path, config.exclude_paths)]
+        files=[file for file in changes.files if not _is_fully_excluded(file, config.exclude_paths)]
     )
 
 
@@ -106,7 +111,10 @@ def load_config(path: Path | None, cwd: Path | None = None) -> Config:
         document = tomllib.load(handle)
 
     if path.name == "pyproject.toml":
-        data = document.get("tool", {}).get("patchproof")
+        tool = document.get("tool", {})
+        if not isinstance(tool, dict):
+            raise ConfigError("[tool] must be a TOML table")
+        data = tool.get("patchproof")
         if data is None:
             return Config()
     else:

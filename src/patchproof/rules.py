@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable
 
 from patchproof.config import Config, path_matches
-from patchproof.models import ChangeSet, Evidence, Finding, Severity
+from patchproof.models import ChangedFile, ChangeSet, Evidence, Finding, Severity
 
 LOCK_FILES = {
     "cargo.lock",
@@ -56,6 +56,16 @@ def _evidence(path: str, line: int, snippet: str) -> Evidence:
     return Evidence(path=path, line=max(1, line), snippet=clean or "(changed line)")
 
 
+def _matching_paths(file: ChangedFile, patterns: list[str]) -> tuple[str, ...]:
+    return tuple(path for path in file.paths if path_matches(path, patterns))
+
+
+def _path_line(file: ChangedFile, path: str) -> int:
+    if path == file.new_path:
+        return file.first_changed_line
+    return 1
+
+
 def _large_change(changes: ChangeSet, config: Config) -> list[Finding]:
     if len(changes.files) < config.large_pr_files and changes.changed_lines < config.large_pr_lines:
         return []
@@ -78,14 +88,20 @@ def _large_change(changes: ChangeSet, config: Config) -> list[Finding]:
 def _sensitive_paths(changes: ChangeSet, config: Config) -> list[Finding]:
     findings: list[Finding] = []
     for file in changes.files:
-        if path_matches(file.path, config.sensitive_patterns):
+        sensitive_paths = _matching_paths(file, config.sensitive_patterns)
+        if sensitive_paths:
+            sensitive_path = sensitive_paths[0]
             findings.append(
                 Finding(
                     rule_id="PP002",
                     title="Sensitive path changed",
-                    description=f"`{file.path}` matches a configured sensitive-path pattern.",
+                    description=f"`{sensitive_path}` matches a configured sensitive-path pattern.",
                     severity=Severity.HIGH,
-                    evidence=[_evidence(file.path, file.first_changed_line, "sensitive path")],
+                    evidence=[
+                        _evidence(
+                            sensitive_path, _path_line(file, sensitive_path), "sensitive path"
+                        )
+                    ],
                     remediation="Request review from the owner of this subsystem and verify least privilege.",
                 )
             )
@@ -93,17 +109,19 @@ def _sensitive_paths(changes: ChangeSet, config: Config) -> list[Finding]:
 
 
 def _missing_tests(changes: ChangeSet, config: Config) -> list[Finding]:
-    source_files = [
-        file for file in changes.files if path_matches(file.path, config.source_patterns)
-    ]
-    tests_changed = any(path_matches(file.path, config.test_patterns) for file in changes.files)
+    source_files: list[tuple[ChangedFile, str]] = []
+    for file in changes.files:
+        source_paths = _matching_paths(file, config.source_patterns)
+        if source_paths:
+            source_files.append((file, source_paths[0]))
+    tests_changed = any(
+        path_matches(path, config.test_patterns) for file in changes.files for path in file.paths
+    )
     if not source_files or tests_changed:
         return []
     evidence = [
-        _evidence(
-            file.path, file.first_changed_line, "source changed without a matching test change"
-        )
-        for file in source_files[:5]
+        _evidence(path, _path_line(file, path), "source changed without a matching test change")
+        for file, path in source_files[:5]
     ]
     return [
         Finding(
@@ -123,14 +141,20 @@ def _missing_tests(changes: ChangeSet, config: Config) -> list[Finding]:
 def _lock_files(changes: ChangeSet, _: Config) -> list[Finding]:
     findings: list[Finding] = []
     for file in changes.files:
-        if file.path.rsplit("/", 1)[-1].lower() in LOCK_FILES:
+        lock_paths = tuple(
+            path for path in file.paths if path.rsplit("/", 1)[-1].lower() in LOCK_FILES
+        )
+        if lock_paths:
+            lock_path = lock_paths[0]
             findings.append(
                 Finding(
                     rule_id="PP004",
                     title="Dependency lock file changed",
-                    description=f"`{file.path}` changes resolved third-party dependencies.",
+                    description=f"`{lock_path}` changes resolved third-party dependencies.",
                     severity=Severity.MEDIUM,
-                    evidence=[_evidence(file.path, file.first_changed_line, "lock file changed")],
+                    evidence=[
+                        _evidence(lock_path, _path_line(file, lock_path), "lock file changed")
+                    ],
                     remediation="Review package provenance, version deltas, and vulnerability scan results.",
                 )
             )

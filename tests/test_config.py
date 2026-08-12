@@ -12,6 +12,13 @@ def test_defaults_when_pyproject_has_no_section(tmp_path: Path):
     assert config.fail_on == Severity.HIGH
 
 
+def test_rejects_non_table_tool_section(tmp_path: Path):
+    (tmp_path / "pyproject.toml").write_text('tool = "not-a-table"\n', encoding="utf-8")
+
+    with pytest.raises(ConfigError, match=r"\[tool\] must be a TOML table"):
+        load_config(None, tmp_path)
+
+
 def test_loads_explicit_config(tmp_path: Path):
     config_path = tmp_path / "custom.toml"
     config_path.write_text(

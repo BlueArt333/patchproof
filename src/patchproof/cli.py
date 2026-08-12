@@ -13,6 +13,7 @@ from patchproof.ai import AIReviewError, review_with_openai
 from patchproof.config import Config, ConfigError, filter_excluded, load_config
 from patchproof.diff_parser import DiffParseError, parse_unified_diff
 from patchproof.git import GitError, diff_between, diff_staged, diff_worktree
+from patchproof.limits import MAX_DIFF_BYTES, diff_limit_message
 from patchproof.models import ReviewReport, Severity
 from patchproof.renderers import render_json, render_markdown, render_sarif
 from patchproof.rules import RULES, analyze
@@ -90,6 +91,22 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _decode_diff(data: bytes) -> str:
+    if len(data) > MAX_DIFF_BYTES:
+        raise ValueError(diff_limit_message())
+    return data.decode("utf-8", errors="replace")
+
+
+def _read_stream(stream: object) -> str:
+    binary_stream = getattr(stream, "buffer", None)
+    if binary_stream is not None:
+        return _decode_diff(binary_stream.read(MAX_DIFF_BYTES + 1))
+    text = stream.read(MAX_DIFF_BYTES + 1)  # type: ignore[attr-defined]
+    if len(text.encode("utf-8")) > MAX_DIFF_BYTES:
+        raise ValueError(diff_limit_message())
+    return text
+
+
 def _read_diff(args: argparse.Namespace) -> str:
     if bool(args.base) != bool(args.head):
         raise ValueError("--base and --head must be supplied together")
@@ -97,8 +114,9 @@ def _read_diff(args: argparse.Namespace) -> str:
         raise ValueError("--base/--head cannot be combined with another input mode")
     if args.diff_file is not None:
         if str(args.diff_file) == "-":
-            return sys.stdin.read()
-        return args.diff_file.read_text(encoding="utf-8", errors="replace")
+            return _read_stream(sys.stdin)
+        with args.diff_file.open("rb") as handle:
+            return _decode_diff(handle.read(MAX_DIFF_BYTES + 1))
     if args.base and args.head:
         return diff_between(args.base, args.head, args.repo)
     if args.staged:

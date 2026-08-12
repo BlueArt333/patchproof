@@ -80,6 +80,15 @@ class ChangedFile:
         return self.new_path if self.new_path != "/dev/null" else self.old_path
 
     @property
+    def paths(self) -> tuple[str, ...]:
+        """Return each real old/new path once, preserving diff order."""
+        paths: list[str] = []
+        for path in (self.old_path, self.new_path):
+            if path and path != "/dev/null" and path not in paths:
+                paths.append(path)
+        return tuple(paths)
+
+    @property
     def added_lines(self) -> list[DiffLine]:
         return [line for hunk in self.hunks for line in hunk.lines if line.kind == LineKind.ADD]
 
@@ -114,7 +123,7 @@ class ChangeSet:
 
     @property
     def paths(self) -> set[str]:
-        return {file.path for file in self.files}
+        return {path for file in self.files for path in file.paths}
 
 
 @dataclass(frozen=True, slots=True)

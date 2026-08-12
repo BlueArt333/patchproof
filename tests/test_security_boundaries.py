@@ -31,6 +31,21 @@ def test_excluded_paths_are_removed_before_any_analysis():
     assert _available_evidence(filtered) == ([], set())
 
 
+def test_rename_is_excluded_only_when_both_paths_are_excluded():
+    patch = """diff --git a/auth/critical.py b/vendor/critical.py
+similarity index 100%
+rename from auth/critical.py
+rename to vendor/critical.py
+"""
+    changes = parse_unified_diff(patch)
+
+    kept = filter_excluded(changes, Config(exclude_paths=["vendor/*"]))
+    excluded = filter_excluded(changes, Config(exclude_paths=["auth/*", "vendor/*"]))
+
+    assert len(kept.files) == 1
+    assert excluded.files == []
+
+
 def test_cli_exclusion_changes_report_scope(tmp_path: Path):
     patch_path = tmp_path / "secret.patch"
     patch_path.write_text(SECRET_PATCH, encoding="utf-8")
@@ -107,6 +122,45 @@ def test_ai_finding_evidence_is_redacted(monkeypatch):
     assert "@all" not in rendered
     assert "[Click](" not in rendered
     assert "Gating:** `no (advisory)`" in rendered
+
+
+def test_ai_rejects_boolean_lines_and_caps_locally(monkeypatch):
+    findings_payload = [
+        {
+            "title": "Invalid boolean line",
+            "description": "Must not be accepted.",
+            "path": "generated/credentials.py",
+            "line": True,
+            "remediation": "Ignore it.",
+        }
+    ]
+    findings_payload.extend(
+        {
+            "title": f"Finding {index}",
+            "description": "Concrete advisory.",
+            "path": "generated/credentials.py",
+            "line": 1,
+            "remediation": "Review it.",
+        }
+        for index in range(6)
+    )
+
+    class FakeResponses:
+        @staticmethod
+        def create(**_kwargs):
+            return SimpleNamespace(output_text=json.dumps({"findings": findings_payload}))
+
+    class FakeOpenAI:
+        def __init__(self, **_kwargs):
+            self.responses = FakeResponses()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeOpenAI))
+
+    findings = review_with_openai(parse_unified_diff(SECRET_PATCH), model="test-model")
+
+    assert len(findings) == 5
+    assert all(finding.title != "Invalid boolean line" for finding in findings)
 
 
 @pytest.mark.parametrize(

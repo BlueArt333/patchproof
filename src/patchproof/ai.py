@@ -131,7 +131,12 @@ def review_with_openai(changes: ChangeSet, model: str | None = None) -> list[Fin
         title = item.get("title")
         description = item.get("description")
         remediation = item.get("remediation")
-        if not isinstance(path, str) or not isinstance(line, int) or (path, line) not in allowed:
+        if (
+            not isinstance(path, str)
+            or not isinstance(line, int)
+            or isinstance(line, bool)
+            or (path, line) not in allowed
+        ):
             continue
         if not all(isinstance(value, str) for value in (title, description, remediation)):
             continue
@@ -154,4 +159,6 @@ def review_with_openai(changes: ChangeSet, model: str | None = None) -> list[Fin
                 gating=False,
             )
         )
+        if len(findings) == 5:
+            break
     return findings

@@ -124,3 +124,14 @@ def test_require_ai_requires_ai(capsys):
 def test_model_requires_ai(capsys):
     assert main(["review", "--model", "gpt-test"]) == 2
     assert "--model requires --ai" in capsys.readouterr().err
+
+
+def test_rejects_diff_file_over_safety_limit(tmp_path: Path, capsys, monkeypatch):
+    from patchproof import cli
+
+    monkeypatch.setattr(cli, "MAX_DIFF_BYTES", 8)
+    patch = tmp_path / "large.patch"
+    patch.write_bytes(b"123456789")
+
+    assert main(["review", "--diff-file", str(patch)]) == 2
+    assert "safety limit" in capsys.readouterr().err

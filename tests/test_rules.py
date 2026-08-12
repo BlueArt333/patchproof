@@ -89,3 +89,43 @@ def test_secret_redaction_applies_to_findings_from_other_rules():
         for evidence in finding.evidence
         if finding.rule_id in {"PP005", "PP006"}
     )
+
+
+def test_rename_from_sensitive_path_is_still_flagged():
+    patch = """diff --git a/auth/critical.py b/docs/critical.py
+similarity index 100%
+rename from auth/critical.py
+rename to docs/critical.py
+"""
+
+    findings = analyze(parse_unified_diff(patch), Config())
+    sensitive = next(finding for finding in findings if finding.rule_id == "PP002")
+
+    assert sensitive.evidence[0].path == "auth/critical.py"
+
+
+def test_rename_from_source_path_still_prompts_for_tests():
+    patch = """diff --git a/src/critical.py b/docs/critical.txt
+similarity index 100%
+rename from src/critical.py
+rename to docs/critical.txt
+"""
+
+    findings = analyze(parse_unified_diff(patch), Config())
+    ids = {finding.rule_id for finding in findings}
+
+    assert "PP003" in ids
+    missing_tests = next(finding for finding in findings if finding.rule_id == "PP003")
+    assert missing_tests.evidence[0].path == "src/critical.py"
+
+
+def test_rename_from_lock_file_is_still_flagged():
+    patch = """diff --git a/package-lock.json b/archive/package-lock.old
+similarity index 100%
+rename from package-lock.json
+rename to archive/package-lock.old
+"""
+
+    ids = {finding.rule_id for finding in analyze(parse_unified_diff(patch), Config())}
+
+    assert "PP004" in ids
