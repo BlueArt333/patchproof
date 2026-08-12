@@ -1,0 +1,135 @@
+name: PatchProof review
+description: Evidence-first pull request risk checks for open-source maintainers
+author: BlueArt333
+
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  base:
+    description: Base Git ref to compare
+    required: true
+  head:
+    description: Head Git ref to compare
+    required: true
+  config:
+    description: Optional trusted path to a PatchProof TOML configuration file
+    required: false
+    default: ""
+  fail-on:
+    description: Minimum finding severity that fails the action, or never
+    required: false
+    default: high
+  output-format:
+    description: Report format (markdown, json, or sarif)
+    required: false
+    default: markdown
+  output-file:
+    description: Path for the generated report
+    required: false
+    default: patchproof-report.md
+  ai:
+    description: Enable the optional OpenAI review (requires OPENAI_API_KEY)
+    required: false
+    default: "false"
+  model:
+    description: Optional OpenAI model used when AI review is enabled
+    required: false
+    default: ""
+
+outputs:
+  report-path:
+    description: Absolute path to the generated report
+    value: ${{ steps.review.outputs.report-path }}
+  verdict:
+    description: Review verdict (clear, review, or needs-attention)
+    value: ${{ steps.review.outputs.verdict }}
+  risk-score:
+    description: Risk score from 0 to 100
+    value: ${{ steps.review.outputs.risk-score }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install PatchProof
+      shell: bash
+      env:
+        PATCHPROOF_ACTION_PATH: ${{ github.action_path }}
+        INPUT_AI: ${{ inputs.ai }}
+      run: |
+        case "$INPUT_AI" in
+          true) python -m pip install --disable-pip-version-check "$PATCHPROOF_ACTION_PATH[ai]" ;;
+          false) python -m pip install --disable-pip-version-check "$PATCHPROOF_ACTION_PATH" ;;
+          *)
+            echo "patchproof action: ai must be true or false" >&2
+            exit 2
+            ;;
+        esac
+
+    - name: Review changes
+      id: review
+      shell: bash
+      env:
+        INPUT_BASE: ${{ inputs.base }}
+        INPUT_HEAD: ${{ inputs.head }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+        INPUT_OUTPUT_FORMAT: ${{ inputs.output-format }}
+        INPUT_OUTPUT_FILE: ${{ inputs.output-file }}
+        INPUT_AI: ${{ inputs.ai }}
+        INPUT_MODEL: ${{ inputs.model }}
+      run: |
+        set +e
+
+        case "$INPUT_FAIL_ON" in
+          info|low|medium|high|critical|never) ;;
+          *) echo "patchproof action: invalid fail-on value" >&2; exit 2 ;;
+        esac
+        case "$INPUT_OUTPUT_FORMAT" in
+          markdown|json|sarif) ;;
+          *) echo "patchproof action: invalid output-format value" >&2; exit 2 ;;
+        esac
+        case "$INPUT_OUTPUT_FILE" in
+          *$'\r'*|*$'\n'*)
+            echo "patchproof action: output-file cannot contain line breaks" >&2
+            exit 2
+            ;;
+        esac
+
+        output_path="$(python -m patchproof.action_support "$GITHUB_WORKSPACE" "$INPUT_OUTPUT_FILE")" || exit $?
+        mkdir -p "$(dirname "$output_path")"
+        if [[ -e "$output_path" ]]; then
+          rm -f -- "$output_path" || exit 2
+        fi
+        [[ ! -e "$output_path" ]] || { echo "patchproof action: cannot prepare a fresh report" >&2; exit 2; }
+
+        args=(review --base "$INPUT_BASE" --head "$INPUT_HEAD" --repo "$GITHUB_WORKSPACE")
+        args+=(--fail-on "$INPUT_FAIL_ON" --format "$INPUT_OUTPUT_FORMAT" --output "$output_path")
+        if [[ -z "$INPUT_CONFIG" ]]; then
+          args+=(--no-config)
+        fi
+        if [[ -n "$INPUT_CONFIG" ]]; then
+          args+=(--config "$INPUT_CONFIG")
+        fi
+        if [[ "$INPUT_AI" == "true" ]]; then
+          args+=(--ai)
+          if [[ -n "$INPUT_MODEL" ]]; then
+            args+=(--model "$INPUT_MODEL")
+          fi
+        fi
+
+        patchproof "${args[@]}"
+        status=$?
+
+        if [[ ! -f "$output_path" ]]; then
+          echo "patchproof action: no report was produced" >&2
+          exit 2
+        fi
+        printf 'report-path=%s\n' "$output_path" >> "$GITHUB_OUTPUT"
+        exit "$status"

@@ -1,0 +1,35 @@
+# Consumer example. Replace every placeholder with a reviewed full commit SHA.
+# No config input means built-in defaults; never trust policy from the PR checkout.
+name: PatchProof
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<reviewed-full-commit-sha>
+        with:
+          fetch-depth: 0
+
+      - name: Review pull request
+        id: patchproof
+        uses: BlueArt333/patchproof@<reviewed-full-commit-sha>
+        with:
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          fail-on: high
+          output-format: sarif
+          output-file: patchproof.sarif
+
+      - name: Upload SARIF artifact
+        if: always() && steps.patchproof.outputs.report-path != ''
+        uses: actions/upload-artifact@<reviewed-full-commit-sha>
+        with:
+          name: patchproof-sarif
+          path: ${{ steps.patchproof.outputs.report-path }}
+          if-no-files-found: error

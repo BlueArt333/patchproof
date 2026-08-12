@@ -1,0 +1,32 @@
+name: PatchProof
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run PatchProof
+        id: patchproof
+        uses: ./
+        with:
+          base: ${{ github.event.pull_request.base.sha }}
+          head: ${{ github.event.pull_request.head.sha }}
+          fail-on: high
+          output-format: markdown
+          output-file: patchproof-report.md
+
+      - name: Add report to the job summary
+        if: always() && steps.patchproof.outputs.report-path != ''
+        shell: bash
+        env:
+          REPORT_PATH: ${{ steps.patchproof.outputs.report-path }}
+        run: cat "$REPORT_PATH" >> "$GITHUB_STEP_SUMMARY"

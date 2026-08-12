@@ -1,0 +1,69 @@
+# Copy this file to `patchproof.toml` or `.patchproof.toml` at your repository root.
+# The same keys may be placed under `[tool.patchproof]` in `pyproject.toml`.
+
+[patchproof]
+version = 1
+
+# Exit non-zero when a finding is at or above this severity.
+# Allowed: "info", "low", "medium", "high", "critical", or "never".
+fail_on = "high"
+
+# A patch crossing either limit is considered large enough for an explicit review signal.
+large_pr_files = 20
+large_pr_lines = 500
+
+# Patterns use slash-separated repository-relative paths and shell-style globs.
+source_patterns = [
+  "*.py",
+  "*.js",
+  "*.jsx",
+  "*.ts",
+  "*.tsx",
+  "*.java",
+  "*.go",
+  "*.rs",
+  "*.rb",
+  "*.php",
+  "*.cs",
+  "*.c",
+  "*.cpp",
+  "*.h",
+]
+
+test_patterns = [
+  "tests/*",
+  "test/*",
+  "spec/*",
+  "**/tests/*",
+  "**/test/*",
+  "**/spec/*",
+  "*_test.*",
+  "test_*.*",
+  "*.test.*",
+  "*.spec.*",
+]
+
+sensitive_patterns = [
+  ".github/workflows/*",
+  "auth/*",
+  "**/auth/*",
+  "security/*",
+  "**/security/*",
+  "migrations/*",
+  "**/migrations/*",
+  "Dockerfile*",
+  "**/Dockerfile*",
+  "permissions.*",
+  "**/permissions.*",
+]
+
+# Excluded paths are not analyzed. Keep this list narrow and review changes carefully.
+exclude_paths = [
+  "vendor/*",
+  "**/vendor/*",
+  "dist/*",
+  "**/dist/*",
+]
+
+# Rule IDs are stable suppression keys. Prefer fixing or narrowing a rule before ignoring it.
+ignore_rules = []

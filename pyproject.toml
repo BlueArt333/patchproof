@@ -1,0 +1,59 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "patchproof"
+version = "0.1.0"
+description = "Evidence-first pull request risk checks for open-source maintainers"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+  { name = "BlueArt333" },
+]
+keywords = ["code-review", "git", "github-actions", "pull-request", "security"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = []
+
+[project.optional-dependencies]
+ai = ["openai>=2.0.0,<3"]
+dev = [
+  "build>=1.2,<2",
+  "pytest>=8.3,<9",
+  "pytest-cov>=6,<7",
+  "ruff>=0.11,<1",
+]
+
+[project.scripts]
+patchproof = "patchproof.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/BlueArt333/patchproof"
+Issues = "https://github.com/BlueArt333/patchproof/issues"
+Repository = "https://github.com/BlueArt333/patchproof"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/patchproof"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers --disable-warnings"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
