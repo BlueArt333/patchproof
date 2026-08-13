@@ -25,12 +25,18 @@ PatchProof is a review prioritization tool. It does not replace tests, linters, 
 
 ## Quick start
 
-PatchProof currently installs from a repository checkout:
+Install the latest published release:
+
+```bash
+python -m pip install patchproof
+```
+
+For development from a checkout:
 
 ```bash
 git clone https://github.com/BlueArt333/patchproof.git
 cd patchproof
-python -m pip install .
+python -m pip install -e ".[dev]"
 ```
 
 Review what is staged for the next commit:
@@ -120,7 +126,7 @@ Use `--no-config` when reviewing an untrusted branch with the built-in defaults.
 Install the optional client and provide credentials through the environment:
 
 ```bash
-python -m pip install ".[ai]"
+python -m pip install "patchproof[ai]"
 export OPENAI_API_KEY="..."
 patchproof review --staged --ai
 ```

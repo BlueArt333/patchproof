@@ -23,12 +23,18 @@ PatchProof 用于确定审查优先级，不能替代测试、编译器、linter
 
 ## 快速开始
 
-目前请从仓库源码安装：
+安装已发布的最新版本：
+
+```bash
+python -m pip install patchproof
+```
+
+如果要从源码开发：
 
 ```bash
 git clone https://github.com/BlueArt333/patchproof.git
 cd patchproof
-python -m pip install .
+python -m pip install -e ".[dev]"
 ```
 
 检查已暂存、准备提交的改动：
@@ -116,7 +122,7 @@ ignore_rules = []
 安装可选依赖并通过环境变量提供凭据：
 
 ```bash
-python -m pip install ".[ai]"
+python -m pip install "patchproof[ai]"
 export OPENAI_API_KEY="..."
 patchproof review --staged --ai
 ```
